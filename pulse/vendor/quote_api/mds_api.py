@@ -9,7 +9,7 @@ from collections import OrderedDict
 from typing import Any, Dict, List, Optional
 from ctypes import _Pointer, POINTER, byref
 
-from quote_api.model import (
+from vendor.quote_api.model import (
     # spk_util.py
     VOID_NULLPTR, CHAR_NULLPTR,
     GENERAL_CLI_MAX_NAME_LEN,
@@ -32,12 +32,12 @@ from quote_api.model import (
     MdsTickResendRequestReqT, MdsChangePasswordReqT, MdsChangePasswordRspT
 )
 
-from quote_api.c_api_wrapper import (
+from vendor.quote_api.c_api_wrapper import (
     MdsAsyncApiContextParamsT, CMdsApiFuncLoader, MdsMsgDispatcher,
     log_error, log_info
 )
 
-from quote_api.mds_spi import MdsClientSpi
+from vendor.quote_api.mds_spi import MdsClientSpi
 
 
 # ===================================================================

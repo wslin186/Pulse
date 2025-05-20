@@ -8,7 +8,7 @@ from ctypes import (
     c_void_p, c_char_p, POINTER, CFUNCTYPE, Structure
 )
 
-from quote_api.model import (
+from vendor.quote_api.model import (
     # spk_util.py
     SingletonType, CCharP, SMsgHeadT, MdsApiRemoteCfgT, MdsApiAddrInfoT,
     MdsAsyncApiChannelT, MdsAsyncApiContextT, MdsAsyncApiChannelCfgT,

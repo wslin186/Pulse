@@ -1,77 +1,117 @@
+# pulse/core/execution/broker.py
+# -*- coding: utf-8 -*-
 from __future__ import annotations
+from dataclasses import dataclass
+from typing import Any, List, Dict
 
-from collections import defaultdict
-from typing import List, Dict
+from core.order_management.sequence import ClSeqNoManager
+from vendor.trade_api import (
+    OesClientApi,
+    OesOrdReqT,
+    OesOrdCancelReqT,
+    eOesMarketIdT,
+    eOesBuySellTypeT,
+    eOesOrdTypeSzT,
+)
 
-from pulse.core.utils.logger import get_logger
-from core.order_management.sequence import next_seq
-from .trade_models import Order, Fill
+
+@dataclass
+class OrderRequest:
+    """
+    统一的订单请求类型
+    """
+    symbol: str
+    side: str    # "buy" 或 "sell"
+    qty: int
+    price: float
 
 
-class SimBroker:
-    """极简撮合：以当前 bar 收盘价立即成交"""
+class LiveBroker:
+    """
+    实盘 Broker —— 以 OES 为例
+    - send_order: 下限价单
+    - cancel_order: 撤单
+    - fetch_fills: 取成交回报
+    - query_cash: 查询资金
+    - query_positions: 查询持仓
+    """
+    def __init__(self, api: OesClientApi, spi: Any):
+        self._api = api
+        self._spi = spi
+        self._cl_mgr = ClSeqNoManager(self._api)
 
-    def __init__(self, initial_cash: float):
-        self.cash      = initial_cash
-        self.positions = defaultdict(int)   # symbol -> qty
-        self.logger    = get_logger("SimBroker")
-        self.fills: List[Fill] = []
+    def send_order(self, order: OrderRequest) -> int:
+        """
+        发送限价单，返回 clSeqNo（<0 表示失败）
+        """
+        seq = self._cl_mgr.get_next_seq()
+        req = OesOrdReqT(
+            clSeqNo=seq,
+            mktId=eOesMarketIdT.OES_MKT_SZ_ASHARE,
+            securityId=order.symbol.encode(),
+            bsType=(
+                eOesBuySellTypeT.OES_BS_TYPE_BUY
+                if order.side == "buy"
+                else eOesBuySellTypeT.OES_BS_TYPE_SELL
+            ),
+            ordType=eOesOrdTypeSzT.OES_ORD_TYPE_SZ_LMT,
+            ordQty=order.qty,
+            ordPrice=int(order.price * 10000),
+        )
+        ret = self._api.send_order(self._api.get_default_ord_channel(), req)
+        return seq if ret == 0 else -1
 
-    # -------- API -------- #
-    def place_orders(self, orders: List[Order], bar_close: float) -> List[Fill]:
-        fills: List[Fill] = []
-        for o in orders:
-            if o.side == "BUY" and self.cash < o.qty * bar_close:
-                self.logger.warning("现金不足，拒绝 BUY %s x%s", o.symbol, o.qty)
-                continue
-            # 更新资金 & 持仓
-            if o.side == "BUY":
-                self.cash -= o.qty * bar_close
-                self.positions[o.symbol] += o.qty
-            else:  # SELL
-                self.cash += o.qty * bar_close
-                self.positions[o.symbol] -= o.qty
-            f = Fill(o.id, o.symbol, o.side, o.qty, bar_close, o.dt)
-            fills.append(f)
-            self.logger.debug("成交 %s", f)
-        self.fills.extend(fills)
-        return fills
+    def cancel_order(self, orig_seq: int) -> int:
+        """
+        撤单：orig_seq 是之前 send_order 返回的 clSeqNo
+        返回本次撤单的 clSeqNo（<0 表示失败）
+        """
+        cancel_seq = self._cl_mgr.get_next_seq()
+        cancel_req = OesOrdCancelReqT(
+            clSeqNo=cancel_seq,
+            mktId=eOesMarketIdT.OES_MKT_SZ_ASHARE,
+            origClOrdId=orig_seq
+        )
+        ret = self._api.send_cancel_order(
+            self._api.get_default_ord_channel(), cancel_req
+        )
+        return cancel_seq if ret == 0 else -1
 
-    def equity(self, last_price: Dict[str, float]) -> float:
-        eq = self.cash
-        for sym, qty in self.positions.items():
-            eq += qty * last_price.get(sym, 0)
-        return eq
+    def fetch_fills(self) -> List[Any]:
+        """
+        获取成交回报列表。假设你的 OesSpiLite 实现了 get_fills()，
+        并在 on_trade_report 中缓存了成交数据。
+        """
+        return self._spi.get_fills()
 
-# ------------------------------------------------------------------
-# 占位实现：先继承 SimBroker，保留接口，后续再完善实时下单逻辑
-# ------------------------------------------------------------------
-# 在文件底部追加 / 替换旧占位
+    def query_cash(self) -> float:
+        """
+        查询最新资金，可用余额等。
+        假设 OesClientApi.query_cash_asset() 返回一个带
+        'availableBalance' 属性的结构体或 dict。
+        """
+        resp = self._api.query_cash_asset()
+        # 根据实际返回类型改下面一行：
+        if hasattr(resp, "availableBalance"):
+            return resp.availableBalance
+        if isinstance(resp, dict) and "availableBalance" in resp:
+            return resp["availableBalance"]
+        # 否则直接尝试转成 float
+        return float(resp)
 
-class LiveBroker(SimBroker):
-    """实盘 OES 下单（最小实现）"""
+    def query_positions(self) -> Dict[str, int]:
+        """
+        查询持仓，返回 {symbol: qty}
+        假设你的 OesSpiLite 在 on_position_report 中缓存了
+        positions，并提供 get_positions() 方法。
+        """
+        # 如果你实现了 SPI.get_positions():
+        if hasattr(self._spi, "get_positions"):
+            return self._spi.get_positions()
 
-    def __init__(self, initial_cash: float, api_cfg: dict):
-        super().__init__(initial_cash)
-        # TODO: 用 api_cfg 初始化 OES 连接
-        from pulse.api.trade.oes_api import OesClientApi  # 假设已封装；若没封装先保留 TODO
-        self.api = OesClientApi(api_cfg.get("cfg_file", "./config/oes_client_stk.conf"))
-        self.api.login()
-        self.logger.info("✅ OES 交易通道已连接")
+        # 或者调用 SDK 的同步接口（如存在）
+        # pos_list = self._api.query_position_list()
+        # return { p.SecurityID.decode(): p.TotalQty for p in pos_list }
 
-    @classmethod
-    def from_config(cls, cfg):
-        return cls(initial_cash=cfg.get("initial_cash", 0), api_cfg=cfg)
-
-    async def send_orders(self, orders):
-        """异步发送订单"""
-        for o in orders:
-            # TODO: 封装至 api.place_order; 简化示例
-            self.logger.info("下单: %s %s x%s @%.2f", o.side, o.symbol, o.qty, o.price)
-            # 假设立即成交
-            self.place_orders([o], bar_close=o.price)
-
-    async def fetch_fills(self):
-        """轮询成交回报（示例直接返回 self.fills 并清空）"""
-        fills, self.fills = self.fills, []
-        return fills
+        # 否则返回空
+        return {}

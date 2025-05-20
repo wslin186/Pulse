@@ -6,7 +6,7 @@ MdsClientSpi
 from typing import Any, Optional
 from abc import abstractmethod
 
-from quote_api.model import (
+from vendor.quote_api.model import (
     # spk_util.py
     SMsgHeadT, MdsAsyncApiChannelT,
 
@@ -34,7 +34,7 @@ class MdsClientSpi:
 
     def __init__(self):
         # @note 解决与mds_api.py互相引用的问题, 故在此导入
-        from quote_api.mds_api import MdsClientApi
+        from vendor.quote_api.mds_api import MdsClientApi
 
         self.mds_api: Optional[MdsClientApi] = None
 

@@ -15,7 +15,7 @@ from functools import (
     partial
 )
 
-from quote_api.model import (
+from vendor.quote_api.model import (
     # spk_util.py
     CFuncPointer, memcpy, SMsgHeadT, VOID_NULLPTR,
     MdsAsyncApiChannelT, MdsAsyncApiChannelCfgT,
@@ -30,7 +30,7 @@ from quote_api.model import (
     eMdsMsgTypeT, MdsMktRspMsgBodyT,
 )
 
-from quote_api.mds_spi import (
+from vendor.quote_api.mds_spi import (
     MdsClientSpi
 )
 

@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, List
 
 import pandas as pd
+
+from core.data.types import MarketSnapshot
 from pulse.core.execution.trade_models import Order
 
 from pulse.core.utils.logger import get_logger
@@ -24,6 +26,13 @@ class BaseStrategy(ABC):
 
     def on_tick(self, tick: Dict[str, Any]) -> None:
         pass
+
+    def on_snapshot(self, snap: MarketSnapshot) -> list[Order]:
+        """
+        当接收到 L1 快照时被调用，默认不做任何事。
+        子类可重写此方法，从 snap 生成 Order 对象。
+        """
+        return []
 
     # ---------- 订单提交 & 读取 ---------- #
     def _submit(self, order: Order) -> None:
