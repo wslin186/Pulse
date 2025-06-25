@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Callable, Any
 
 from vendor.trade_api import OesClientSpi
-from vendor.trade_api.model import eOesBuySellTypeT, eOesOrdTypeSzT, eOesOrdTypeShT
+from vendor.trade_api.model import eOesBuySellTypeT, eOesOrdTypeSzT, eOesOrdTypeShT, OesFundTrsfReportT
 from core.utils.logger import get_logger
 
 log = get_logger("OesSpi")
@@ -17,7 +17,7 @@ _SIDE_CN = {
     eOesBuySellTypeT.OES_BS_TYPE_BUY:  "买入",
     eOesBuySellTypeT.OES_BS_TYPE_SELL: "卖出"
 }
-# A 股委托类型中文映射（深圳+上海，含特殊“市价”方式）
+# A 股委托类型中文映射（深圳+上海，含特殊"市价"方式）
 _PRICE_TYPE_CN = {
     # 深圳
     eOesOrdTypeSzT.OES_ORD_TYPE_SZ_MTL_BEST:           "市价",
@@ -133,4 +133,26 @@ class OesSpiLite(OesClientSpi):
 
     def on_ord_disconnect(self, channel: Any, user_info: Any) -> int:
         log.warning(f"[{_now()}] ⚠️ 委托通道已断开")
+        return 0
+
+    def on_order_reject(self, channel, msg_head, rpt_head, rpt_body, user_info):
+        seq = getattr(rpt_body, 'clSeqNo', None)
+        reason = getattr(rpt_body, 'ordRejReason', getattr(rpt_body, 'rejReason', 0))
+        log.error(f"[{_now()}] ❌ 订单被拒 | 单号={seq} | 原因代码={reason}")
+        if self._hook:
+            self._hook(rpt_body)
+        return 0
+
+    def on_fund_trsf_report(self, channel, msg_head, rpt_head, rpt_body: OesFundTrsfReportT, user_info):
+        amt = getattr(rpt_body, 'trsfAmt', 0) / 10000
+        status = getattr(rpt_body, 'trsfStatus', 0)
+        log.info(f"[{_now()}] 出入金回报 | 金额={amt:,.2f} | 状态={status}")
+        if self._hook:
+            self._hook(rpt_body)
+        return 0
+
+    def on_report_synchronization(self, channel, msg_head, rpt_head, rpt_body, user_info):
+        log.info(f"[{_now()}] ✅ 回报同步完成 seq={getattr(rpt_body, 'lastRptSeqNum', '')}")
+        if self._hook:
+            self._hook(rpt_body)
         return 0

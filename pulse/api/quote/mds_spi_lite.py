@@ -15,6 +15,7 @@ from vendor.quote_api import (
     eMdsSubscribeDataTypeT,
 )
 from vendor.quote_api import MDSAPI_CFG_DEFAULT_SECTION, MDSAPI_CFG_DEFAULT_KEY_TCP_ADDR
+from vendor.quote_api.model import MdsSecurityStatusMsgT, MdsTradingSessionStatusMsgT
 
 from pulse.core.data.types import MarketSnapshot
 from pulse.core.utils.logger import get_logger
@@ -119,4 +120,60 @@ class MdsSpiLite(MdsClientSpi):
             self._push_snapshot(snap)
         except Exception:
             _LOG.exception("❌ 处理快照回调失败")
+        return 0
+
+    def on_connect_failed(self, channel, user_info):
+        _LOG.warning("⚠️ MDS 连接失败，将自动重试")
+        return 0
+
+    def on_disconnect(self, channel, user_info):
+        _LOG.warning("⚠️ MDS 连接已断开，将自动重连")
+        return 0
+
+    # —— 市场状态类回调 ——
+    def on_security_status(self, channel, msg_head, msg_body: MdsSecurityStatusMsgT, user_info):
+        try:
+            code = msg_body.SecurityID.decode()
+            status = msg_body.SecurityStatusFlag
+            _LOG.debug("证券状态变动 %s => 0x%X", code, status)
+        except Exception:
+            _LOG.exception("解析证券状态失败")
+        return 0
+
+    def on_trading_session_status(self, channel, msg_head, msg_body: MdsTradingSessionStatusMsgT, user_info):
+        try:
+            _LOG.info("交易节状态 %s | %s", msg_body.ExchID, msg_body.TradingSessionID)
+        except Exception:
+            _LOG.exception("解析交易节状态失败")
+        return 0
+
+    # —— Level2 逐笔示例回调 ——
+    def on_l2_tick_trade(self, channel, msg_head, msg_body, user_info):
+        # 这里只简单输出，用户可自行扩展写入队列
+        try:
+            _LOG.debug("逐笔成交 %s @ %.2f x %d", msg_body.SecurityID.decode(), msg_body.TradePrice/10000.0, msg_body.TradeQty)
+        except Exception:
+            pass
+        return 0
+
+    def on_l2_tick_order(self, channel, msg_head, msg_body, user_info):
+        return 0
+
+    def on_l2_market_data_snapshot(self, channel, msg_head, msg_body, user_info):
+        return 0
+
+    def on_l2_best_orders_snapshot(self, channel, msg_head, msg_body, user_info):
+        return 0
+
+    def on_l2_market_overview(self, channel, msg_head, msg_body, user_info):
+        return 0
+
+    # 其余未用回调直接返回 0 即可，保持与基类兼容
+    def on_market_index_snapshot_full_refresh(self, channel, msg_head, msg_body, user_info):
+        return 0
+
+    def on_market_option_snapshot_full_refresh(self, channel, msg_head, msg_body, user_info):
+        return 0
+
+    def on_tick_channel_heart_beat(self, channel, msg_head, msg_body, user_info):
         return 0
